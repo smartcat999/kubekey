@@ -102,6 +102,7 @@ func (i *InstallRegistryModule) Init() {
 }
 
 func InstallRegistry(i *InstallRegistryModule) []task.Interface {
+	var tasks = make([]task.Interface, 0, 4)
 	installRegistryBinary := &task.RemoteTask{
 		Name:     "InstallRegistryBinary",
 		Desc:     "Install registry binary",
@@ -110,6 +111,7 @@ func InstallRegistry(i *InstallRegistryModule) []task.Interface {
 		Parallel: true,
 		Retry:    1,
 	}
+	tasks = append(tasks, installRegistryBinary)
 
 	generateRegistryService := &task.RemoteTask{
 		Name:  "GenerateRegistryService",
@@ -122,21 +124,27 @@ func InstallRegistry(i *InstallRegistryModule) []task.Interface {
 		Parallel: true,
 		Retry:    1,
 	}
+	tasks = append(tasks, generateRegistryService)
 
-	generateRegistryConfig := &task.RemoteTask{
-		Name:  "GenerateRegistryConfig",
-		Desc:  "Generate registry config",
-		Hosts: i.Runtime.GetHostsByRole(common.Registry),
-		Action: &action.Template{
-			Template: templates.RegistryConfigTempl,
-			Dst:      "/etc/kubekey/registry/config.yaml",
-			Data: util.Data{
-				"Certificate": fmt.Sprintf("%s.pem", i.KubeConf.Cluster.Registry.PrivateRegistry),
-				"Key":         fmt.Sprintf("%s-key.pem", i.KubeConf.Cluster.Registry.PrivateRegistry),
+	for _, host := range i.Runtime.GetHostsByRole(common.Registry) {
+		generateRegistryConfig := &task.RemoteTask{
+			Name:  "GenerateRegistryConfig",
+			Desc:  "Generate registry config",
+			Hosts: i.Runtime.GetHostsByRole(common.Registry),
+			Action: &action.Template{
+				Template: templates.RegistryConfigTempl,
+				Dst:      "/etc/kubekey/registry/config.yaml",
+				Data: util.Data{
+					"Ip":                  host.GetInternalAddress(),
+					"SecurityEnhancement": i.KubeConf.Arg.SecurityEnhancement,
+					"Certificate":         fmt.Sprintf("%s.pem", i.KubeConf.Cluster.Registry.PrivateRegistry),
+					"Key":                 fmt.Sprintf("%s-key.pem", i.KubeConf.Cluster.Registry.PrivateRegistry),
+				},
 			},
-		},
-		Parallel: true,
-		Retry:    1,
+			Parallel: true,
+			Retry:    1,
+		}
+		tasks = append(tasks, generateRegistryConfig)
 	}
 
 	startRegistryService := &task.RemoteTask{
@@ -147,13 +155,8 @@ func InstallRegistry(i *InstallRegistryModule) []task.Interface {
 		Parallel: true,
 		Retry:    1,
 	}
-
-	return []task.Interface{
-		installRegistryBinary,
-		generateRegistryService,
-		generateRegistryConfig,
-		startRegistryService,
-	}
+	tasks = append(tasks, startRegistryService)
+	return tasks
 }
 
 func InstallHarbor(i *InstallRegistryModule) []task.Interface {
@@ -250,10 +253,10 @@ func InstallHarbor(i *InstallRegistryModule) []task.Interface {
 	}
 
 	generateHarborConfig := &task.RemoteTask{
-		Name:   "GenerateHarborConfig",
-		Desc:   "Generate harbor config",
-		Hosts:  i.Runtime.GetHostsByRole(common.Registry),
-		Action: new(GenerateHarborConfig),
+		Name:     "GenerateHarborConfig",
+		Desc:     "Generate harbor config",
+		Hosts:    i.Runtime.GetHostsByRole(common.Registry),
+		Action:   new(GenerateHarborConfig),
 		Parallel: true,
 		Retry:    1,
 	}

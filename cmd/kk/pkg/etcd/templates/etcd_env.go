@@ -80,7 +80,7 @@ ETCD_LOG_LEVEL={{ .LogLevel }}
 {{- end }}
 {{- if .UnsupportedArch }}
 ETCD_UNSUPPORTED_ARCH={{ .Arch }}
-{{ end }}
+{{- end }}
 
 # TLS settings
 ETCD_TRUSTED_CA_FILE=/etc/ssl/etcd/ssl/ca.pem
@@ -92,6 +92,9 @@ ETCD_PEER_TRUSTED_CA_FILE=/etc/ssl/etcd/ssl/ca.pem
 ETCD_PEER_CERT_FILE=/etc/ssl/etcd/ssl/member-{{ .Hostname }}.pem
 ETCD_PEER_KEY_FILE=/etc/ssl/etcd/ssl/member-{{ .Hostname }}-key.pem
 ETCD_PEER_CLIENT_CERT_AUTH=True
+{{- if .SecurityEnhancement }}
+ETCD_CIPHER_SUITES=TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+{{- end }}
 
 # CLI settings
 ETCDCTL_ENDPOINTS=https://127.0.0.1:2379

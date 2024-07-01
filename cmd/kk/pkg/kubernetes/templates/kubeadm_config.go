@@ -163,7 +163,7 @@ var (
 	FeatureGatesSecurityDefaultConfiguration = map[string]bool{
 		"RotateKubeletServerCertificate": true, //k8s 1.7+
 		"TTLAfterFinished":               true, //k8s 1.12+
-		"SeccompDefault":                 true, //kubelet
+		//"SeccompDefault":                 true, //kubelet
 	}
 
 	ApiServerArgs = map[string]string{
@@ -173,7 +173,7 @@ var (
 		"bind-address":       "0.0.0.0",
 		"authorization-mode": "Node,RBAC",
 		// --enable-admission-plugins=EventRateLimit must have a configuration file
-		"enable-admission-plugins": "AlwaysPullImages,ServiceAccount,NamespaceLifecycle,NodeRestriction,LimitRanger,ResourceQuota,MutatingAdmissionWebhook,ValidatingAdmissionWebhook,PodNodeSelector,PodSecurity",
+		"enable-admission-plugins": "AlwaysPullImages,ServiceAccount,NamespaceLifecycle,NodeRestriction,LimitRanger,ResourceQuota,MutatingAdmissionWebhook,ValidatingAdmissionWebhook,PodNodeSelector",
 		// "audit-log-path":      "/var/log/apiserver/audit.log", // need audit policy
 		"profiling":              "false",
 		"request-timeout":        "120s",
@@ -205,6 +205,12 @@ var (
 	SchedulerSecurityArgs = map[string]string{
 		"bind-address": "127.0.0.1",
 		"profiling":    "false",
+	}
+	TlsCipherSuites = []string{
+		"TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384",
+		"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384",
+		"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+		"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
 	}
 )
 
@@ -249,7 +255,7 @@ func GetSchedulerArgs(securityEnhancement bool) map[string]string {
 	return SchedulerArgs
 }
 
-func UpdateFeatureGatesConfiguration(args map[string]string, kubeConf *common.KubeConf) map[string]string {
+func UpdateFeatureGatesConfiguration(args map[string]string, kubeConf *common.KubeConf, address string) map[string]string {
 	var featureGates []string
 
 	for k, v := range kubeConf.Cluster.Kubernetes.FeatureGates {
@@ -274,10 +280,15 @@ func UpdateFeatureGatesConfiguration(args map[string]string, kubeConf *common.Ku
 
 	args["feature-gates"] = strings.Join(featureGates, ",")
 
+	if kubeConf.Arg.SecurityEnhancement {
+		args["tls-cipher-suites"] = strings.Join(TlsCipherSuites, ",")
+		args["bind-address"] = address
+	}
+
 	return args
 }
 
-func GetKubeletConfiguration(runtime connector.Runtime, kubeConf *common.KubeConf, criSock string, securityEnhancement bool) map[string]interface{} {
+func GetKubeletConfiguration(runtime connector.Runtime, kubeConf *common.KubeConf, criSock string, securityEnhancement bool, address string) map[string]interface{} {
 	// When kubernetes version is less than 1.21,`CSIStorageCapacity` should not be set.
 	cmp, _ := versionutil.MustParseSemantic(kubeConf.Cluster.Kubernetes.Version).Compare("v1.21.0")
 	if cmp == -1 {
@@ -314,16 +325,18 @@ func GetKubeletConfiguration(runtime connector.Runtime, kubeConf *common.KubeCon
 	}
 
 	if securityEnhancement {
+		defaultKubeletConfiguration["address"] = address
 		defaultKubeletConfiguration["readOnlyPort"] = 0
 		defaultKubeletConfiguration["protectKernelDefaults"] = true
 		defaultKubeletConfiguration["eventRecordQPS"] = 1
 		defaultKubeletConfiguration["streamingConnectionIdleTimeout"] = "5m"
 		defaultKubeletConfiguration["makeIPTablesUtilChains"] = true
-		defaultKubeletConfiguration["tlsCipherSuites"] = []string{
-			"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
-			"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
-			"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305",
-		}
+		//defaultKubeletConfiguration["tlsCipherSuites"] = []string{
+		//	"TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256",
+		//	"TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256",
+		//	"TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305",
+		//}
+		defaultKubeletConfiguration["tlsCipherSuites"] = TlsCipherSuites
 		defaultKubeletConfiguration["featureGates"] = FeatureGatesSecurityDefaultConfiguration
 	}
 
@@ -429,6 +442,10 @@ func GetKubeProxyConfiguration(kubeConf *common.KubeConf) map[string]interface{}
 			"minSyncPeriod": "0s",
 			"syncPeriod":    "30s",
 		},
+	}
+
+	if kubeConf.Arg.SecurityEnhancement {
+		defaultKubeProxyConfiguration["healthzBindAddress"] = "127.0.0.1:10256"
 	}
 
 	customKubeProxyConfiguration := make(map[string]interface{})
